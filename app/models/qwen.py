@@ -46,6 +46,12 @@ def load_model(model_size="4B"):
             # Load the tokenizer
             tokenizer = AutoTokenizer.from_pretrained(model_name, trust_remote_code=True)
 
+            # After loading tokenizer, add:
+            if tokenizer.pad_token is None:
+                tokenizer.pad_token = tokenizer.unk_token
+            if tokenizer.pad_token == tokenizer.eos_token:
+                tokenizer.pad_token = tokenizer.unk_token
+
             # Determine the hardware platform and best device
             is_apple_silicon = (platform.system() == "Darwin" and
                                 platform.machine() == "arm64" and

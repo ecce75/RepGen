@@ -1,0 +1,25 @@
+name: RepGen
+channels:
+  - conda-forge
+  - defaults
+dependencies:
+  - python=3.11
+  - pandas=2.1.3
+  - numpy=1.26.2
+  - pillow=10.3.0
+  - librosa=0.10.1
+  - pip
+  - pip:
+    - streamlit==1.37.0
+    - pydub==0.25.1
+    - soundfile==0.12.1
+    - SpeechRecognition==3.10.0
+    - python-dotenv==1.0.0
+    - transformers==4.50.0
+    - ffmpeg-python==0.2.0
+    - audio-recorder-streamlit==0.0.8
+    - accelerate==1.7.0
+    - torch==2.5.0 --index-url https://download.pytorch.org/whl/cu118
+    - torchvision==0.20.0 --index-url https://download.pytorch.org/whl/cu118
+    - torchaudio==2.5.0 --index-url https://download.pytorch.org/whl/cu118
+    - bitsandbytes==0.44.1
