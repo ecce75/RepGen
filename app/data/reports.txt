@@ -1,0 +1,354 @@
+# NATO Report Fields to CoT XML Mapping Guide
+
+## Overview
+This document maps ATP-97/APP-11 standard military report fields to Cursor-on-Target (CoT) XML structure for TAK integration.
+
+## Common CoT XML Base Structure
+All reports follow this base CoT XML structure:
+
+```xml
+<event version="2.0" uid="[unique-id]" type="[event-type]" time="[timestamp]" start="[timestamp]" stale="[stale-time]" how="[how-code]">
+    <point lat="[latitude]" lon="[longitude]" hae="[altitude]" ce="[circular_error]" le="[linear_error]"/>
+    <detail>
+        <contact callsign="[reporting_unit]"/>
+        <__group name="[team_color]" role="[role]"/>
+        <remarks>[additional_info]</remarks>
+        <!-- Report-specific fields go here -->
+    </detail>
+</event>
+```
+
+## 1. SITREP (Situation Report)
+
+### ATP-97/APP-11 Fields:
+- Line 1: Date-Time Group (DTG)
+- Line 2: Reporting Unit
+- Line 3: Location 
+- Line 4: Situation Summary
+- Line 5: Personnel Status
+- Line 6: Equipment Status
+- Line 7: Supplies Status
+- Line 8: Mission Status
+- Line 9: Communications Status
+- Line 10: Next Report Time
+
+### CoT XML Mapping:
+```xml
+<event type="a-f-G-U-C" ...>
+    <detail>
+        <sitrep>
+            <dtg>[Line 1]</dtg>
+            <reporting_unit>[Line 2]</reporting_unit>
+            <location_desc>[Line 3]</location_desc>
+            <situation>[Line 4]</situation>
+            <personnel>
+                <effective>[personnel_count]</effective>
+                <casualties>[casualty_count]</casualties>
+            </personnel>
+            <equipment_status>[Line 6]</equipment_status>
+            <supplies_status>[Line 7]</supplies_status>
+            <mission_status>[Line 8]</mission_status>
+            <comms_status>[Line 9]</comms_status>
+            <next_report>[Line 10]</next_report>
+        </sitrep>
+    </detail>
+</event>
+```
+
+## 2. CONTACTREP (Contact Report)
+
+### ATP-97/APP-11 Fields:
+- Line 1: Size of enemy unit
+- Line 2: Activity of enemy
+- Line 3: Location of enemy
+- Line 4: Unit identification
+- Line 5: Time of observation
+- Line 6: Equipment observed
+
+### CoT XML Mapping:
+```xml
+<event type="a-h-G" ...>
+    <detail>
+        <contact_report>
+            <size>[Line 1]</size>
+            <activity>[Line 2]</activity>
+            <location_desc>[Line 3]</location_desc>
+            <unit_id>[Line 4]</unit_id>
+            <time_observed>[Line 5]</time_observed>
+            <equipment>[Line 6]</equipment>
+        </contact_report>
+    </detail>
+</event>
+```
+
+## 3. INTELREP (Intelligence Report)
+
+### ATP-97/APP-11 Fields:
+- Line 1: DTG
+- Line 2: Reporting Unit
+- Line 3: Location
+- Line 4: Intelligence Summary
+- Line 5: Source Reliability
+- Line 6: Information Quality
+- Line 7: Priority
+
+### CoT XML Mapping:
+```xml
+<event type="a-f-G-I" ...>
+    <detail>
+        <intel_report>
+            <dtg>[Line 1]</dtg>
+            <reporting_unit>[Line 2]</reporting_unit>
+            <location_desc>[Line 3]</location_desc>
+            <intelligence>[Line 4]</intelligence>
+            <source_reliability>[Line 5]</source_reliability>
+            <info_quality>[Line 6]</info_quality>
+            <priority>[Line 7]</priority>
+        </intel_report>
+    </detail>
+</event>
+```
+
+## 4. SPOTREP (Spot Report)
+
+### ATP-97/APP-11 Fields:
+- Line 1: Size
+- Line 2: Activity
+- Line 3: Location
+- Line 4: Unit
+- Line 5: Time
+- Line 6: Equipment
+
+### CoT XML Mapping:
+```xml
+<event type="a-f-G-E" ...>
+    <detail>
+        <spot_report>
+            <size>[Line 1]</size>
+            <activity>[Line 2]</activity>
+            <location_desc>[Line 3]</location_desc>
+            <unit>[Line 4]</unit>
+            <time_observed>[Line 5]</time_observed>
+            <equipment>[Line 6]</equipment>
+        </spot_report>
+    </detail>
+</event>
+```
+
+## 5. PATROLREP (Patrol Report)
+
+### ATP-97/APP-11 Fields:
+- Line 1: Patrol Number
+- Line 2: Task and Purpose
+- Line 3: Time Departed
+- Line 4: Time Returned
+- Line 5: Route Used
+- Line 6: Terrain
+- Line 7: Weather
+- Line 8: Enemy Contact
+- Line 9: Obstacle Encountered
+- Line 10: Conclusion
+
+### CoT XML Mapping:
+```xml
+<event type="a-f-G-P" ...>
+    <detail>
+        <patrol_report>
+            <patrol_number>[Line 1]</patrol_number>
+            <task_purpose>[Line 2]</task_purpose>
+            <time_departed>[Line 3]</time_departed>
+            <time_returned>[Line 4]</time_returned>
+            <route>[Line 5]</route>
+            <terrain>[Line 6]</terrain>
+            <weather>[Line 7]</weather>
+            <enemy_contact>[Line 8]</enemy_contact>
+            <obstacles>[Line 9]</obstacles>
+            <conclusion>[Line 10]</conclusion>
+        </patrol_report>
+    </detail>
+</event>
+```
+
+## 6. FRAGO (Fragmentary Order)
+
+### ATP-97/APP-11 Fields:
+- Line 1: Task Organization
+- Line 2: Situation
+- Line 3: Mission
+- Line 4: Execution
+- Line 5: Service Support
+- Line 6: Command and Signal
+
+### CoT XML Mapping:
+```xml
+<event type="a-f-G-O" ...>
+    <detail>
+        <frago>
+            <task_org>[Line 1]</task_org>
+            <situation>[Line 2]</situation>
+            <mission>[Line 3]</mission>
+            <execution>[Line 4]</execution>
+            <service_support>[Line 5]</service_support>
+            <command_signal>[Line 6]</command_signal>
+        </frago>
+    </detail>
+</event>
+```
+
+## 7. MEDEVAC (Medical Evacuation Request)
+
+### ATP-97/APP-11 Fields:
+- Line 1: Location of pickup site
+- Line 2: Radio frequency and callsign
+- Line 3: Number of patients by precedence
+- Line 4: Special equipment required
+- Line 5: Number of patients by type
+- Line 6: Security at pickup site
+- Line 7: Method of marking pickup site
+- Line 8: Patient nationality and status
+- Line 9: NBC contamination
+
+### CoT XML Mapping:
+```xml
+<event type="b-r-f-h-c" ...>
+    <detail>
+        <medevac>
+            <pickup_location>[Line 1]</pickup_location>
+            <radio_freq>[Line 2]</radio_freq>
+            <patients_precedence>[Line 3]</patients_precedence>
+            <special_equipment>[Line 4]</special_equipment>
+            <patients_type>[Line 5]</patients_type>
+            <security>[Line 6]</security>
+            <marking_method>[Line 7]</marking_method>
+            <patient_status>[Line 8]</patient_status>
+            <nbc_contamination>[Line 9]</nbc_contamination>
+        </medevac>
+    </detail>
+</event>
+```
+
+## 8. SALUTE (Size, Activity, Location, Unit, Time, Equipment)
+
+### ATP-97/APP-11 Fields:
+- S: Size
+- A: Activity
+- L: Location
+- U: Unit
+- T: Time
+- E: Equipment
+
+### CoT XML Mapping:
+```xml
+<event type="a-h-G-U-C-I" ...>
+    <detail>
+        <salute>
+            <size>[S]</size>
+            <activity>[A]</activity>
+            <location_desc>[L]</location_desc>
+            <unit>[U]</unit>
+            <time>[T]</time>
+            <equipment>[E]</equipment>
+        </salute>
+    </detail>
+</event>
+```
+
+## 9. LOGSITREP (Logistics Situation Report)
+
+### ATP-97/APP-11 Fields:
+- Line 1: Ammunition Status
+- Line 2: Fuel Status
+- Line 3: Water Status
+- Line 4: Food Status
+- Line 5: Medical Supplies
+- Line 6: Equipment Status
+- Line 7: Transportation Status
+- Line 8: Maintenance Status
+- Line 9: Personnel Status
+- Line 10: Special Requirements
+
+### CoT XML Mapping:
+```xml
+<event type="a-f-G-L" ...>
+    <detail>
+        <logsitrep>
+            <ammunition>[Line 1]</ammunition>
+            <fuel>[Line 2]</fuel>
+            <water>[Line 3]</water>
+            <food>[Line 4]</food>
+            <medical_supplies>[Line 5]</medical_supplies>
+            <equipment>[Line 6]</equipment>
+            <transportation>[Line 7]</transportation>
+            <maintenance>[Line 8]</maintenance>
+            <personnel>[Line 9]</personnel>
+            <special_requirements>[Line 10]</special_requirements>
+        </logsitrep>
+    </detail>
+</event>
+```
+
+## 10. INTREP (Interrogation Report)
+
+### ATP-97/APP-11 Fields:
+- Line 1: Source Information
+- Line 2: Interrogation Summary
+- Line 3: Enemy Disposition
+- Line 4: Enemy Capabilities
+- Line 5: Enemy Intentions
+- Line 6: Source Reliability
+- Line 7: Information Evaluation
+- Line 8: Dissemination
+
+### CoT XML Mapping:
+```xml
+<event type="a-f-G-I-I" ...>
+    <detail>
+        <intrep>
+            <source_info>[Line 1]</source_info>
+            <interrogation_summary>[Line 2]</interrogation_summary>
+            <enemy_disposition>[Line 3]</enemy_disposition>
+            <enemy_capabilities>[Line 4]</enemy_capabilities>
+            <enemy_intentions>[Line 5]</enemy_intentions>
+            <source_reliability>[Line 6]</source_reliability>
+            <info_evaluation>[Line 7]</info_evaluation>
+            <dissemination>[Line 8]</dissemination>
+        </intrep>
+    </detail>
+</event>
+```
+
+## CoT Event Type Codes Reference
+
+| Report Type | CoT Event Type | Description |
+|-------------|----------------|-------------|
+| SITREP | a-f-G-U-C | Friendly Unit Situation |
+| CONTACTREP | a-h-G | Hostile Contact |
+| INTELREP | a-f-G-I | Intelligence Report |
+| SPOTREP | a-f-G-E | Spot Report |
+| PATROLREP | a-f-G-P | Patrol Report |
+| FRAGO | a-f-G-O | Fragmentary Order |
+| MEDEVAC | b-r-f-h-c | Medical Emergency |
+| SALUTE | a-h-G-U-C-I | Enemy Observation |
+| LOGSITREP | a-f-G-L | Logistics Status |
+| INTREP | a-f-G-I-I | Interrogation Intelligence |
+
+## Implementation Notes
+
+1. **Unique IDs**: Each CoT message requires a unique UID (UUID format recommended)
+2. **Timestamps**: Use ISO 8601 format for all time fields
+3. **Coordinates**: Use WGS84 decimal degrees for lat/lon
+4. **Validation**: Implement schema validation for CoT XML structure
+5. **Encoding**: Use UTF-8 encoding for all text fields
+6. **Security**: Consider OPSEC when transmitting sensitive information
+
+## Voice-to-Text Considerations
+
+When implementing voice recognition for these reports:
+
+1. **Structured Prompts**: Use standardized voice prompts for each report type
+2. **Field Validation**: Implement field-specific validation (e.g., coordinates, DTG format)
+3. **Confirmation**: Provide audio playback confirmation before transmission
+4. **Error Handling**: Implement robust error handling for misrecognized speech
+5. **Context Awareness**: Use context clues to improve recognition accuracy
+
+This mapping provides a foundation for converting NATO standard reports into TAK-compatible CoT messages while maintaining military reporting standards and interoperability.

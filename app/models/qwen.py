@@ -15,7 +15,7 @@ model = None
 tokenizer = None
 
 
-def load_model(model_size="4B"):
+def load_model(model_size="0.6B"):
     """
     Load the Qwen model and tokenizer with hardware-specific optimizations.
 
