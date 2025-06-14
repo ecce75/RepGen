@@ -218,7 +218,8 @@ def main():
                         
                         # Try PyTAK first, fall back to direct socket
                         try:
-                            success = send_cot_pytak(tak_url, report_type, st.session_state.report_data)
+                            success = send_cot_direct(tak_url, report_type, st.session_state.report_data)
+                            #success = send_cot_pytak(tak_url, report_type, st.session_state.report_data)
                         except Exception as e:
                             logger.warning(f"PyTAK failed, using direct send: {str(e)}")
                             success = send_cot_direct(tak_url, report_type, st.session_state.report_data)
