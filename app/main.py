@@ -203,14 +203,42 @@ def main():
                     with st.spinner("Sending report..."):
                         time.sleep(1.5)
                         
+                        # Generate Chain-of-Thought analysis
+                        with st.spinner("Generating intelligence analysis..."):
+                            try:
+                                from app.utils.cot import generate_chain_of_thought, save_chain_of_thought_to_file
+                                
+                                # Generate the analysis
+                                cot_analysis = generate_chain_of_thought(report_type, st.session_state.report_data)
+                                
+                                # Save to file for WinTAK to monitor
+                                cot_file_path = save_chain_of_thought_to_file(report_type, st.session_state.report_data, cot_analysis)
+                                
+                                if cot_file_path:
+                                    st.session_state.cot_file_path = cot_file_path
+                                    st.session_state.cot_analysis = cot_analysis
+                            except Exception as e:
+                                import logging
+                                logging.error(f"Chain-of-Thought generation failed: {e}")
+                        
                         # Format the report for display
-                        formatted_report = format_report_for_transmission(report_type, st.session_state.report_data)
+                        formatted_report, xml_file_path = format_report_for_transmission(report_type, st.session_state.report_data)
                         
                         # Save to history
                         save_report_to_history(report_type, st.session_state.report_data, ["Headquarters"], "Sent")
                         
-                        # Display success message
-                        st.success("Report sent successfully!")
+                        # Show success message about the report and generated files
+                        success_msg = "Report sent successfully!"
+                        if xml_file_path:
+                            success_msg += " CoT XML generated for WinTAK."
+                        if hasattr(st.session_state, 'cot_file_path') and st.session_state.cot_file_path:
+                            success_msg += " Intelligence analysis generated."
+                        st.success(success_msg)
+                        
+                        # If we have a CoT analysis, show it in an expander
+                        if hasattr(st.session_state, 'cot_analysis') and st.session_state.cot_analysis:
+                            with st.expander("View Intelligence Analysis"):
+                                st.markdown(st.session_state.cot_analysis)
                         
                         # Reset for new recording
                         st.session_state.audio_data = None
