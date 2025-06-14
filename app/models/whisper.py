@@ -18,7 +18,7 @@ processor = None
 model = None
 
 
-def load_model(model_size="small"):
+def load_model(model_size="tiny"):
     """
     Load the Whisper model and processor.
 

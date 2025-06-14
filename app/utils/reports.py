@@ -4,8 +4,7 @@ from datetime import datetime
 import streamlit as st
 import re
 
-# Import the CoT and XML generation modules
-from app.utils.cot import generate_chain_of_thought, save_chain_of_thought_to_file
+# Import the TAK CoT XML generation module
 from app.utils.cot_xml import generate_cot_from_report
 
 

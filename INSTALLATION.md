@@ -111,19 +111,71 @@ python scripts/setup_models.py --whisper small --qwen 1.7B
 streamlit run app/main.py
 ```
 
-## Recommended Model Sizes by Platform
+## TAK Integration Configuration
 
-| Platform | Whisper | Qwen | Notes |
-|----------|---------|------|-------|
-| NVIDIA GPU (16GB+ VRAM) | medium | 8B | Best quality, requires more VRAM |
-| NVIDIA GPU (8GB VRAM) | small | 4B | Good balance of quality and speed |
-| NVIDIA GPU (<8GB VRAM) | small | 1.7B | More memory efficient |
-| Apple Silicon | small | 1.7B | Good performance on M1/M2/M3 |
-| CPU only | small | 0.6B | Fastest option for CPU |
+### Setting up WinTAK Import Directory
+
+By default, RepGen saves TAK CoT XML files to `~/TAK/import`. To configure a custom directory:
+
+```bash
+# Set environment variable (Linux/Mac)
+export WINTAK_IMPORT_DIR="/path/to/your/wintak/import"
+
+# Or on Windows
+set WINTAK_IMPORT_DIR="C:\path\to\your\wintak\import"
+```
+
+### CoT XML File Format
+
+RepGen generates NATO-standard Cursor-on-Target XML files that include:
+- Unique message identifiers
+- Proper CoT types for different report formats
+- Geographic coordinates (when available)
+- Report field data structured for TAK consumption
+- Expiration timestamps
+
+## System Requirements
+
+| Platform | RAM | Storage | Performance |
+|----------|-----|---------|-------------|
+| NVIDIA GPU (8GB+ VRAM) | 8GB | 5GB | Excellent |
+| Apple Silicon (M1/M2/M3) | 8GB | 3GB | Very Good |
+| CPU only | 4GB | 2GB | Good |
 
 ## Troubleshooting
 
-- **Out of memory errors**: Try a smaller model size or disable quantization
-- **Slow performance**: On CPU systems, use the smallest model sizes
-- **Model loading issues**: Check your internet connection and disk space
-- **Audio recording not working**: Ensure you have installed audio-recorder-streamlit
+### Common Issues
+
+- **Out of memory errors**: The application will automatically use smaller models if memory is limited
+- **Slow performance**: Performance will vary based on hardware; consider upgrading for better experience
+- **Model loading issues**: Check your internet connection and ensure you have sufficient disk space
+- **Audio recording not working**: 
+  - Ensure your browser has microphone permissions
+  - Check that `streamlit-audio-recorder` is properly installed
+  - Try refreshing the browser page
+
+### TAK Integration Issues
+
+- **CoT XML files not appearing in WinTAK**: 
+  - Verify the `WINTAK_IMPORT_DIR` path is correct
+  - Check that WinTAK is monitoring the import directory
+  - Ensure the generated XML files have proper permissions
+
+### Performance Optimization
+
+- **For better speech recognition**: Use a quiet environment and speak clearly
+- **For faster processing**: Close other applications to free up system resources
+- **For improved accuracy**: Pause between different report sections when speaking
+
+## Environment Variables
+
+Optional environment variables for advanced configuration:
+
+```bash
+# TAK integration
+WINTAK_IMPORT_DIR="/path/to/tak/import"  # Custom TAK import directory
+
+# Model configuration (advanced users)
+WHISPER_MODEL_SIZE="small"              # Whisper model size
+QWEN_MODEL_SIZE="1.8b"                  # Qwen model size
+```
