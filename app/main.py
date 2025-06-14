@@ -8,8 +8,9 @@ if project_root not in sys.path:
     sys.path.insert(0, project_root)
 
 from app.utils.ai import process_speech_to_text, determine_report_type_from_transcript, extract_entities_from_text
-from app.utils.reports import load_report_templates, save_report_to_history, format_report_for_transmission, send_cot_udp
+from app.utils.reports import load_report_templates, save_report_to_history, format_report_for_display
 from app.utils.audio import get_audio_from_microphone
+from app.utils.pytak_sender import send_cot_pytak, send_cot_direct
 
 # Set page configuration
 st.set_page_config(
@@ -42,7 +43,7 @@ def main():
     #FOR TESTING PURPOSES ONLY
     # Define TAK server IP and port
     # In production, these should be set via environment variables or configuration files
-    ip="192.168.1.194"
+    ip="192.168.1.241"
     port=4242
     
     # Simple header
@@ -210,19 +211,23 @@ def main():
                         time.sleep(1.5)
                         
                         # Format the report for display and generate TAK CoT XML
-                        formatted_report, xml_file_path = format_report_for_transmission(report_type, st.session_state.report_data)
+                        formatted_report = format_report_for_display(report_type, st.session_state.report_data)
+                
+                        # Send via PyTAK or direct socket
+                        tak_url = f"tcp://{ip}:{port}"  # or use "udp://{ip}:{port}" for UDP
                         
+                        # Try PyTAK first, fall back to direct socket
+                        try:
+                            success = send_cot_pytak(tak_url, report_type, st.session_state.report_data)
+                        except Exception as e:
+                            logger.warning(f"PyTAK failed, using direct send: {str(e)}")
+                            success = send_cot_direct(tak_url, report_type, st.session_state.report_data)
                         
-                        # Send CoT to TAK
-                        if send_cot_udp(ip, port, xml_file_path):
-                            # Show success message about the report and generated files
-                            success_msg = "Report sent successfully!"
-                            if xml_file_path:
-                                success_msg += " TAK CoT XML generated for WinTAK import."
-                            st.success(success_msg)
+                        if success:
+                            st.success("Report sent successfully to TAK!")
                             report_status = "Sent"
                         else:
-                            st.error("Failed to send report to TAK. Please check your connection.")
+                            st.error("Failed to send report to TAK.")
                             report_status = "Failed"
                         
                         # Save to history
@@ -241,6 +246,12 @@ def main():
     st.markdown("---")
     if st.button("Toggle Report History", use_container_width=True):
         st.session_state.show_history = not st.session_state.show_history
+
+    if st.button("Reset audio", use_container_width=True):
+        st.session_state.audio_data = None
+        st.session_state.transcript = ""
+        st.session_state.report_data = {}
+        st.session_state.detected_report_type = None
     
     # Show history if toggled on
     if st.session_state.show_history and st.session_state.report_history:

@@ -5,6 +5,17 @@ import logging
 import platform
 import os
 from transformers import AutoModelForCausalLM, AutoTokenizer
+import re
+from app.utils.military_nlp import (
+    create_military_conditioned_prompt,
+    validate_military_extraction,
+    post_process_extracted_fields,
+    determine_report_type_enhanced,
+    convert_phonetic_to_standard,
+    preprocess_military_transcript,
+    extract_fields_with_fallback,
+    merge_extraction_results
+)
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -15,7 +26,7 @@ model = None
 tokenizer = None
 
 
-def load_model(model_size="0.6B"):
+def load_model(model_size="4B"):
     """
     Load the Qwen model and tokenizer with hardware-specific optimizations.
 
@@ -139,126 +150,121 @@ def load_model(model_size="0.6B"):
     return tokenizer, model
 
 
-def extract_fields_from_text(report_type, transcript, report_templates):
+def extract_fields_from_text(report_type: str, transcript: str, report_templates: dict) -> dict:
     """
-    Extract fields from transcript for a specific report type.
-
-    Args:
-        report_type (str): The type of report (e.g., "CONTACTREP")
-        transcript (str): The transcript of the audio
-        report_templates (dict): Dictionary containing report templates
-
-    Returns:
-        dict: Dictionary with extracted fields
+    Enhanced extraction that orchestrates the full pipeline using military utilities.
     """
     global model, tokenizer
-
-    # Load the model if not already loaded
+    
     if model is None or tokenizer is None:
         tokenizer, model = load_model()
-
-    # Get template for this report type
+    
     template = report_templates.get(report_type, {})
-    fields = [field for field in template.get("fields", [])]
-
-    # Create a prompt for the model - use Qwen3 chat format
-    field_descriptions = "\n".join([f"- {field['id']}: {field['label']}" for field in fields])
-
-    prompt = [
-        {"role": "system",
-         "content": "You are a military information extraction assistant. Extract information from military reports accurately and format it as requested."},
-        {"role": "user", "content": f"""
-I need you to extract structured data from the following military report:
-
-Report Type: {template.get("title", report_type)}
-Transcript: {transcript}
-
-Extract the following fields and format your answer ONLY as a JSON object (with no other text):
-{field_descriptions}
-
-NOTE: ONLY return the JSON object, nothing else. No explanations or other text.
-"""}
-    ]
-
-    # Generate response
+    
+    # Log the preprocessed transcript for debugging
+    preprocessed = preprocess_military_transcript(transcript)
+    logger.info(f"Original transcript: {transcript}")
+    logger.info(f"Preprocessed transcript: {preprocessed}")
+    
+    # Create prompt with anti-copying measures
+    prompt = create_military_conditioned_prompt(report_type, transcript, template)
+    
     try:
-        # Apply chat template with thinking mode disabled to keep it focused on extraction
+        # Apply chat template
         text = tokenizer.apply_chat_template(
             prompt,
             tokenize=False,
             add_generation_prompt=True,
-            enable_thinking=False  # Disable thinking mode for extraction tasks
+            enable_thinking=False
         )
-
-        # Tokenize the prompt and move to the appropriate device
+        
+        # Generate with very low temperature for extraction consistency
         input_tokens = tokenizer(text, return_tensors="pt")
-
-        # Handle device placement based on model type
+        
         if hasattr(model, 'device'):
-            # If model has a single device
             device = model.device
-
-            # Here's the important fix:
-            # Store the device-transferred tensors back into the original format, not as a dict
             input_features = input_tokens.to(device)
         else:
-            # For models with device_map (usually quantized models)
             input_features = input_tokens
-
-        # Generate response with sampling (not greedy decoding)
+        
         with torch.no_grad():
             generation_args = {
                 "max_new_tokens": 500,
-                "temperature": 0.2,
-                "top_p": 0.95,
-                "do_sample": True
+                "temperature": 0.05,  # Very low for consistent extraction
+                "top_p": 0.9,
+                "do_sample": True,
+                "repetition_penalty": 1.2
             }
-
-            # Use the correctly formatted input_features
+            
             generated_ids = model.generate(
                 input_features.input_ids,
                 attention_mask=input_features.attention_mask,
                 **generation_args
             )
-
+            
             response = tokenizer.decode(generated_ids[0], skip_special_tokens=True)
-
-        # Extract the JSON part of the response
-        try:
-            # Sometimes the model might include "```json" and "```" around the response
-            if "```json" in response:
-                json_str = response.split("```json")[1].split("```")[0].strip()
-            elif "```" in response:
-                json_str = response.split("```")[1].strip()
+        
+        # Extract JSON
+        json_match = re.search(r'```json\s*(\{.*?\})\s*```', response, re.DOTALL)
+        if json_match:
+            json_str = json_match.group(1)
+        else:
+            json_start = response.rfind('{')
+            json_end = response.rfind('}') + 1
+            if json_start >= 0 and json_end > json_start:
+                json_str = response[json_start:json_end]
             else:
-                # Find the JSON object in the text
-                json_start = response.find('{')
-                json_end = response.rfind('}') + 1
-
-                if json_start >= 0 and json_end > json_start:
-                    json_str = response[json_start:json_end]
-                else:
-                    # Fall back to the full response
-                    json_str = response
-
-            extracted_fields = json.loads(json_str)
-
-            # Ensure all field IDs are included
-            field_ids = [field["id"] for field in fields]
-            for field_id in field_ids:
-                if field_id not in extracted_fields:
-                    extracted_fields[field_id] = ""
-
-            return extracted_fields
-        except json.JSONDecodeError as e:
-            logger.error(f"Error parsing JSON from model response: {str(e)}")
-            logger.debug(f"Response was: {response}")
-            raise e
-
+                raise ValueError("No JSON found in response")
+        
+        extracted_fields = json.loads(json_str)
+        
+        # Double-check for example data leakage
+        example_values = ["RAZOR 3-1", "THUNDER", "18TWL9434567890", "47.55", "purple"]
+        for field, value in extracted_fields.items():
+            if value and any(example in str(value) for example in example_values):
+                logger.warning(f"Example data leaked into field {field}: {value}")
+                # Try to extract from preprocessed transcript
+                if field == "location" and "grid" in preprocessed.lower():
+                    grid_match = re.search(r'grid\s+([A-Z0-9]+)', preprocessed, re.IGNORECASE)
+                    if grid_match:
+                        extracted_fields[field] = grid_match.group(1)
+        
+        # Validate and clean using military utilities
+        validated_fields = validate_military_extraction(report_type, extracted_fields)
+        final_fields = post_process_extracted_fields(report_type, validated_fields, transcript)
+        
+        # Ensure all fields exist
+        for field in template.get("fields", []):
+            if field["id"] not in final_fields:
+                final_fields[field["id"]] = ""
+        
+        return final_fields
+        
     except Exception as e:
-        error_msg = f"Error in field extraction: {str(e)}"
-        logger.error(error_msg)
-        raise e
+        logger.error(f"Error in military field extraction: {str(e)}")
+        return {field["id"]: "" for field in template.get("fields", [])}
+
+
+def extract_fields_from_text_with_safety(report_type: str, transcript: str, report_templates: dict) -> dict:
+    """
+    Extract fields using AI with fallback safety net.
+    """
+    # First try AI extraction
+    ai_fields = extract_fields_from_text(report_type, transcript, report_templates)
+    
+    # Always run fallback extraction for safety
+    fallback_fields = extract_fields_with_fallback(transcript, report_type)
+    
+    # Merge results intelligently
+    final_fields = merge_extraction_results(ai_fields, fallback_fields, transcript)
+    
+    # Ensure all required fields exist
+    template = report_templates.get(report_type, {})
+    for field in template.get("fields", []):
+        if field["id"] not in final_fields:
+            final_fields[field["id"]] = ""
+    
+    return final_fields
 
 
 def analyze_priority(report_type, fields):
@@ -470,148 +476,12 @@ No explanation or other text.
         return base_recipients.get(report_type, ["Chain of Command"])
 
 
-def determine_report_type(transcript, report_templates):
+def determine_report_type(transcript: str, report_templates: dict) -> tuple:
     """
-    Determine the report type from the transcript.
-
-    Args:
-        transcript (str): The transcript of the audio
-        report_templates (dict): Dictionary containing report templates
-
-    Returns:
-        str: The determined report type (e.g., "CONTACTREP", "SITREP", etc.)
-        float: Confidence score (0-1)
+    Determine report type using enhanced military pattern matching.
     """
-    global model, tokenizer
-
-    # Load the model if not already loaded
-    if model is None or tokenizer is None:
-        tokenizer, model = load_model()
-
-    # Create a prompt for the model - use Qwen3 chat format
-    report_types_str = ", ".join([f"{key} ({template['title']})" for key, template in report_templates.items()])
-
-    prompt = [
-        {"role": "system",
-         "content": "You are a military report classification assistant. Determine which type of military report is being described."},
-        {"role": "user", "content": f"""
-Analyze the following transcript and determine which type of military report it represents.
-
-Transcript: {transcript}
-
-Available report types:
-{report_types_str}
-
-Return ONLY the report type code (e.g., CONTACTREP, SITREP, MEDEVAC, RECCEREP) that best matches the transcript.
-If you're unsure, choose the closest match.
-"""}
-    ]
-
-    # Generate response
-    try:
-        # Apply chat template
-        text = tokenizer.apply_chat_template(
-            prompt,
-            tokenize=False,
-            add_generation_prompt=True,
-            enable_thinking=False
-        )
-
-        # Tokenize the prompt and move to the appropriate device
-        input_tokens = tokenizer(text, return_tensors="pt")
-
-        # Handle device placement based on model type
-        if hasattr(model, 'device'):
-            # If model has a single device
-            device = model.device
-            # FIX: Keep the tokens as an object, not a dictionary
-            input_features = input_tokens.to(device)
-        else:
-            # For models with device_map (usually quantized models)
-            input_features = input_tokens
-
-        # Generate response with sampling
-        with torch.no_grad():
-            generation_args = {
-                "max_new_tokens": 50,
-                "temperature": 0.2,
-                "top_p": 0.95,
-                "do_sample": True
-            }
-
-            generated_ids = model.generate(
-                input_features.input_ids,
-                attention_mask=input_features.attention_mask,
-                **generation_args
-            )
-
-            response = tokenizer.decode(generated_ids[0], skip_special_tokens=True)
-
-        # Extract the report type from the response
-        # Clean up the response to get just the report type
-        for report_type in report_templates.keys():
-            if report_type in response:
-                return report_type, 0.9  # High confidence if exact match
-
-        # If no exact match, try to find the closest match
-        response_clean = response.strip().upper()
-        for report_type in report_templates.keys():
-            if report_type in response_clean:
-                return report_type, 0.8
-
-        # If still no match, use simple keyword matching as fallback
-        transcript_lower = transcript.lower()
-        matches = {}
-
-        report_keywords = {
-            "CONTACTREP": ["contact report", "enemy contact", "engagement", "fire", "attack"],
-            "SITREP": ["situation report", "sitrep", "status update", "current situation"],
-            "MEDEVAC": ["medical evacuation", "medevac", "casualty", "wounded", "injured", "evacuation request"],
-            "RECCEREP": ["reconnaissance report", "recon report", "observation", "surveillance"]
-        }
-
-        for report_type, keywords in report_keywords.items():
-            matches[report_type] = sum(1 for keyword in keywords if keyword in transcript_lower)
-
-        # Find the report type with the most matches
-        best_match = max(matches.items(), key=lambda x: x[1])
-
-        # If no matches, default to SITREP
-        if best_match[1] == 0:
-            return "SITREP", 0.5
-
-        # Calculate a simple confidence score (0-1)
-        total_matches = sum(matches.values())
-        confidence = best_match[1] / total_matches if total_matches > 0 else 0.5
-
-        return best_match[0], confidence
-
-    except Exception as e:
-        logger.error(f"Error in report type determination: {str(e)}")
-
-        # Use simple keyword matching as fallback
-        transcript_lower = transcript.lower()
-        matches = {}
-
-        report_keywords = {
-            "CONTACTREP": ["contact report", "enemy contact", "engagement", "fire", "attack"],
-            "SITREP": ["situation report", "sitrep", "status update", "current situation"],
-            "MEDEVAC": ["medical evacuation", "medevac", "casualty", "wounded", "injured", "evacuation request"],
-            "RECCEREP": ["reconnaissance report", "recon report", "observation", "surveillance"]
-        }
-
-        for report_type, keywords in report_keywords.items():
-            matches[report_type] = sum(1 for keyword in keywords if keyword in transcript_lower)
-
-        # Find the report type with the most matches
-        best_match = max(matches.items(), key=lambda x: x[1])
-
-        # If no matches, default to SITREP
-        if best_match[1] == 0:
-            return "SITREP", 0.5
-
-        # Calculate a simple confidence score (0-1)
-        total_matches = sum(matches.values())
-        confidence = best_match[1] / total_matches if total_matches > 0 else 0.5
-
-        return best_match[0], confidence
+    # First convert any phonetic words to standard format
+    standardized_transcript = convert_phonetic_to_standard(transcript)
+    
+    # Use the enhanced determination from military_nlp module
+    return determine_report_type_enhanced(standardized_transcript, report_templates)

@@ -6,7 +6,8 @@ import streamlit as st
 import re
 
 # Import the TAK CoT XML generation module
-from app.utils.cot_xml import generate_cot_from_report
+from app.utils.pytak_cot import create_cot_event
+from typing import Tuple, Optional
 
 
 def load_report_templates():
@@ -16,78 +17,53 @@ def load_report_templates():
     """
     # Return dictionary of standardized NATO-format templates
     return {
+        "MEDEVAC": {
+            "title": "9-Line MEDEVAC Request",
+            "cot_type": "a-f-G-U-C-I-M-E",  
+            "xml_element": "medevac",        
+            "fields": [
+                {"id": "location", "label": "Location (Grid)", "required": True},
+                {"id": "frequency", "label": "Radio Frequency", "required": False},
+                {"id": "reporting_unit", "label": "Callsign", "required": True},
+                {"id": "number_patients", "label": "Number of Patients", "required": True},
+                {"id": "patient_precedence", "label": "Precedence", "required": True},
+                {"id": "special_equipment", "label": "Special Equipment", "required": False},
+                {"id": "number_litter", "label": "Litter Patients", "required": True},
+                {"id": "number_ambulatory", "label": "Ambulatory Patients", "required": True},
+                {"id": "security_at_pickup", "label": "Security (N/P/E/X)", "required": True},
+                {"id": "method_of_marking", "label": "Marking Method", "required": True},
+                {"id": "patient_nationality", "label": "Nationality", "required": True},
+                {"id": "nbc_contamination", "label": "NBC Contamination", "required": False}
+            ]
+        },
         "CONTACTREP": {
             "title": "Contact Report",
-            "description": "Report enemy contact or engagement",
-            "cot_type": "a-h-G",
-            "xml_element": "contact_report",
+            "cot_type": "a-h-G",           
+            "xml_element": "contactrep",    
             "fields": [
-                {"id": "size", "label": "Size of Enemy Unit", "required": True, "type": "text",
-                 "placeholder": "Squad sized, 4-6 personnel"},
-                {"id": "activity", "label": "Activity of Enemy", "required": True, "type": "text",
-                 "placeholder": "Small arms fire, movement"},
-                {"id": "location_desc", "label": "Location of Enemy", "required": True, "type": "text",
-                 "placeholder": "MGRS: 34TFM12345678"},
-                {"id": "unit_id", "label": "Unit Identification", "required": True, "type": "text",
-                 "placeholder": "Unknown infantry"},
-                {"id": "time_observed", "label": "Time of Observation", "required": True, "type": "text",
-                 "placeholder": "DDMMMYY HHMMZ"},
-                {"id": "equipment", "label": "Equipment Observed", "required": True, "type": "text",
-                 "placeholder": "Small arms, technical vehicles"}
+                {"id": "reporting_unit", "label": "Reporting Unit", "required": True},
+                {"id": "time_of_contact", "label": "Time of Contact", "required": True},
+                {"id": "location", "label": "Location (Grid)", "required": True},
+                {"id": "enemy_size", "label": "Enemy Size", "required": True},
+                {"id": "enemy_activity", "label": "Enemy Activity", "required": True},
+                {"id": "enemy_equipment", "label": "Enemy Equipment", "required": False},
+                {"id": "distance_direction", "label": "Distance/Direction", "required": True},
+                {"id": "friendly_status", "label": "Friendly Status", "required": True}
             ]
         },
         "SITREP": {
             "title": "Situation Report",
-            "description": "Regular update on unit status and situation",
-            "cot_type": "a-f-G-U-C",
-            "xml_element": "sitrep",
+            "cot_type": "a-f-G-U-C",       
+            "xml_element": "sitrep",        
             "fields": [
-                {"id": "dtg", "label": "Date-Time Group (DTG)", "required": True, "type": "text",
-                 "placeholder": "DDMMMYY HHMMZ"},
-                {"id": "reporting_unit", "label": "Reporting Unit", "required": True, "type": "text", 
-                 "placeholder": "Unit designation"},
-                {"id": "location_desc", "label": "Location", "required": True, "type": "text",
-                 "placeholder": "MGRS: 34TFM12345678"},
-                {"id": "situation", "label": "Situation Summary", "required": True, "type": "text",
-                 "placeholder": "Brief description of current situation"},
-                {"id": "personnel", "label": "Personnel Status", "required": True, "type": "text",
-                 "placeholder": "Personnel strength and status"},
-                {"id": "equipment_status", "label": "Equipment Status", "required": True, "type": "text",
-                 "placeholder": "Status of key equipment"},
-                {"id": "supplies_status", "label": "Supplies Status", "required": True, "type": "text",
-                 "placeholder": "Status of supplies"},
-                {"id": "mission_status", "label": "Mission Status", "required": True, "type": "text",
-                 "placeholder": "Progress towards mission objectives"},
-                {"id": "comms_status", "label": "Communications Status", "required": False, "type": "text",
-                 "placeholder": "Status of communications systems"},
-                {"id": "next_report", "label": "Next Report Time", "required": False, "type": "text",
-                 "placeholder": "When next report will be sent"}
-            ]
-        },
-        "MEDEVAC": {
-            "title": "Medical Evacuation Request",
-            "description": "Request for medical evacuation",
-            "cot_type": "b-r-f-h-c",
-            "xml_element": "medevac",
-            "fields": [
-                {"id": "pickup_location", "label": "Location of Pickup Site", "required": True, "type": "text",
-                 "placeholder": "MGRS: 34TFM12345678"},
-                {"id": "radio_freq", "label": "Radio Frequency & Callsign", "required": True, "type": "text",
-                 "placeholder": "38.50 MHz, Alpha 2-1"},
-                {"id": "patients_precedence", "label": "Number of Patients by Precedence", "required": True, "type": "text",
-                 "placeholder": "2 urgent, 1 priority"},
-                {"id": "special_equipment", "label": "Special Equipment Required", "required": False, "type": "text",
-                 "placeholder": "None"},
-                {"id": "patients_type", "label": "Number of Patients by Type", "required": True, "type": "text",
-                 "placeholder": "2 litter, 1 ambulatory"},
-                {"id": "security", "label": "Security at Pickup Site", "required": True, "type": "text",
-                 "placeholder": "No enemy, secured LZ"},
-                {"id": "marking_method", "label": "Method of Marking Pickup Site", "required": True, "type": "text",
-                 "placeholder": "VS-17 panel"},
-                {"id": "patient_status", "label": "Patient Nationality & Status", "required": False, "type": "text",
-                 "placeholder": "US military"},
-                {"id": "nbc_contamination", "label": "NBC Contamination", "required": False, "type": "text",
-                 "placeholder": "None"}
+                {"id": "reporting_unit", "label": "Reporting Unit", "required": True},
+                {"id": "location", "label": "Current Location", "required": True},
+                {"id": "personnel_status", "label": "Personnel Status", "required": True},
+                {"id": "ammunition_status", "label": "Ammunition Status", "required": True},
+                {"id": "fuel_status", "label": "Fuel Status", "required": True},
+                {"id": "current_activity", "label": "Current Activity", "required": True},
+                {"id": "enemy_activity", "label": "Enemy Activity", "required": False},
+                {"id": "requests", "label": "Requests/Requirements", "required": False}
             ]
         },
         "SPOTREP": {
@@ -199,42 +175,26 @@ def validate_report_data(report_type, report_data):
     return missing_fields
 
 
-def format_report_for_transmission(report_type, report_data):
+def format_report_for_transmission(report_type: str, report_data: dict) -> str:
     """
-    Format report data for transmission according to NATO standards.
-    This function also generates the CoT XML file for WinTAK.
+    Format report for display only.
+    CoT XML generation happens in pytak_cot module.
+    """
+    # Load templates at module level or pass as parameter
+    report_templates = load_report_templates()
+    template = report_templates.get(report_type, {})
     
-    Returns a tuple with (formatted_text, xml_file_path)
-    """
-    templates = load_report_templates()
-    if report_type not in templates:
-        return "ERROR: Invalid report type", None
-
-    template = templates[report_type]
-
-    # Format the report in a standardized way for display
-    formatted_lines = [f"--- {template['title'].upper()} ---"]
-
+    formatted_lines = [f"=== {template['title']} ==="]
     for field in template["fields"]:
-        field_id = field["id"]
-        field_label = field["label"]
-
-        if field_id in report_data and report_data[field_id]:
-            formatted_lines.append(f"{field_label.upper()}: {report_data[field_id]}")
+        value = report_data.get(field["id"], "")
+        if value:
+            formatted_lines.append(f"{field['label']}: {value}")
     
-    # Generate the CoT XML file for WinTAK
-    try:
-        xml_file_path = generate_cot_from_report(report_type, report_data)
-        # Add a note about the XML file
-        if xml_file_path:
-            formatted_lines.append(f"\nWinTAK XML file created at: {xml_file_path}")
-    except Exception as e:
-        import logging
-        logging.error(f"Failed to generate CoT XML: {e}")
-        formatted_lines.append(f"\nError creating WinTAK XML file: {str(e)}")
-        xml_file_path = None
+    return "\n".join(formatted_lines)
 
-    return "\n".join(formatted_lines), xml_file_path
+def format_report_for_display(report_type: str, report_data: dict) -> str:
+    """Alias for backward compatibility."""
+    return format_report_for_transmission(report_type, report_data)
 
 def send_cot_tcp(ip, port, xml_file_path):
     """

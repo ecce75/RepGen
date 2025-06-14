@@ -3,6 +3,7 @@ import logging
 
 from ..models.whisper import whisper_process_speech_to_text, get_available_languages
 from ..models.qwen import extract_fields_from_text, suggest_recipients, analyze_priority, determine_report_type
+from .military_nlp import determine_report_type_enhanced
 from . import reports
 
 # Configure logging
