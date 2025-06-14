@@ -8,7 +8,7 @@ if project_root not in sys.path:
     sys.path.insert(0, project_root)
 
 from app.utils.ai import process_speech_to_text, determine_report_type_from_transcript, extract_entities_from_text
-from app.utils.reports import load_report_templates, save_report_to_history, format_report_for_transmission
+from app.utils.reports import load_report_templates, save_report_to_history, format_report_for_transmission, send_cot_udp
 from app.utils.audio import get_audio_from_microphone
 
 # Set page configuration
@@ -39,6 +39,12 @@ if 'show_history' not in st.session_state:
 report_templates = load_report_templates()
 
 def main():
+    #FOR TESTING PURPOSES ONLY
+    # Define TAK server IP and port
+    # In production, these should be set via environment variables or configuration files
+    ip="192.168.1.194"
+    port=4242
+    
     # Simple header
     st.title("RepGen - Voice-Enabled Military Reporting for TAK")
     
@@ -206,14 +212,21 @@ def main():
                         # Format the report for display and generate TAK CoT XML
                         formatted_report, xml_file_path = format_report_for_transmission(report_type, st.session_state.report_data)
                         
-                        # Save to history
-                        save_report_to_history(report_type, st.session_state.report_data, ["Headquarters"], "Sent")
                         
-                        # Show success message about the report and generated files
-                        success_msg = "Report sent successfully!"
-                        if xml_file_path:
-                            success_msg += " TAK CoT XML generated for WinTAK import."
-                        st.success(success_msg)
+                        # Send CoT to TAK
+                        if send_cot_udp(ip, port, xml_file_path):
+                            # Show success message about the report and generated files
+                            success_msg = "Report sent successfully!"
+                            if xml_file_path:
+                                success_msg += " TAK CoT XML generated for WinTAK import."
+                            st.success(success_msg)
+                            report_status = "Sent"
+                        else:
+                            st.error("Failed to send report to TAK. Please check your connection.")
+                            report_status = "Failed"
+                        
+                        # Save to history
+                        save_report_to_history(report_type, st.session_state.report_data, ["Headquarters"], report_status)
                         
                         # Reset for new recording
                         st.session_state.audio_data = None

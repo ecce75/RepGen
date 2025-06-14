@@ -1,6 +1,7 @@
 import json
 import os
 from datetime import datetime
+import socket
 import streamlit as st
 import re
 
@@ -235,6 +236,73 @@ def format_report_for_transmission(report_type, report_data):
 
     return "\n".join(formatted_lines), xml_file_path
 
+def send_cot_tcp(ip, port, xml_file_path):
+    """
+    Send CoT XML data to a WinTAK server.
+    """
+    # This would send the XML data to the specified IP and port via TCP
+
+    # Check if xml_file_path is valid
+    if not xml_file_path or not os.path.exists(xml_file_path):
+        print(f"Invalid or missing XML file: {xml_file_path}")
+        return False
+
+    # get xml file in string format
+    xml_data = xml_to_string(xml_file_path)
+
+    # log the action
+    print(f"Sending CoT XML to {ip}:{port}:::\n{xml_data}")
+
+    # try to connect and send the data to the TAK server/multicast address
+    try:
+        sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        sock.connect((ip, port))    
+        sock.sendall(xml_data.encode('utf-8'))
+        sock.close()
+    except Exception as e:
+        print(f"Failed to send CoT XML: {e}")
+        return False
+
+    return True  # Simulate successful transmission
+
+def send_cot_udp(ip, port, xml_file_path):
+    """
+    Send CoT XML data to a WinTAK server via UDP.
+    """
+    # This would send the XML data to the specified IP and port via UDP
+
+    # Check if xml_file_path is valid
+    if not xml_file_path or not os.path.exists(xml_file_path):
+        print(f"Invalid or missing XML file: {xml_file_path}")
+        return False
+
+    # get xml file in string format
+    xml_data = xml_to_string(xml_file_path)
+
+    # log the action
+    print(f"Sending CoT XML to {ip}:{port}:::\n{xml_data}")
+
+    # try to connect and send the data to the TAK server/multicast address
+    try:
+        sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        sock.sendto(xml_data.encode('utf-8'), (ip, port))
+        sock.close()
+    except Exception as e:
+        print(f"Failed to send CoT XML: {e}")
+        return False
+
+    return True  # Simulate successful transmission
+
+# Generate pretty XML string    
+def xml_to_string(xml_path):
+    # open the xml file, read it and convert to string
+    if not os.path.exists(xml_path):
+        raise FileNotFoundError(f"XML file not found: {xml_path}")
+    
+    with open(xml_path, 'r', encoding='utf-8') as file:
+        xml_str = file.read()
+    
+    return xml_str 
 
 def determine_recipients(report_type):
     """
