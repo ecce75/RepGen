@@ -19,6 +19,8 @@ dependencies:
     - ffmpeg-python==0.2.0
     - audio-recorder-streamlit==0.0.8
     - accelerate==1.7.0
+    - pytak[with_crypto]>=6.0.0
+    - takproto>=1.0.0
     - torch==2.5.0 --index-url https://download.pytorch.org/whl/cu118
     - torchvision==0.20.0 --index-url https://download.pytorch.org/whl/cu118
     - torchaudio==2.5.0 --index-url https://download.pytorch.org/whl/cu118

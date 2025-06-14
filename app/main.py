@@ -2,19 +2,22 @@ import streamlit as st
 import time
 import os
 import sys
+import asyncio
 
 project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if project_root not in sys.path:
     sys.path.insert(0, project_root)
 
 from app.utils.ai import process_speech_to_text, determine_report_type_from_transcript, extract_entities_from_text
-from app.utils.reports import load_report_templates, save_report_to_history, format_report_for_display
+from app.utils.reports import load_report_templates, save_report_to_history, format_report_for_display, send_cot_tcp, send_cot_pytak_sync
 from app.utils.audio import get_audio_from_microphone
+from app.utils.validators import validate_ip_address, validate_port
+from app.utils.pytak_client import VoxFieldPyTAKClient
 from app.utils.pytak_sender import send_cot_pytak, send_cot_direct
 
 # Set page configuration
 st.set_page_config(
-    page_title="RepGen",
+    page_title="VoxField",
     page_icon="🔊",
     layout="wide",
     initial_sidebar_state="collapsed"
@@ -36,6 +39,16 @@ if 'detection_confidence' not in st.session_state:
 if 'show_history' not in st.session_state:
     st.session_state.show_history = False
 
+# Initialize server configuration in session state
+if 'server_ip' not in st.session_state:
+    st.session_state.server_ip = "239.2.3.1"
+if 'server_port' not in st.session_state:
+    st.session_state.server_port = 6969
+if 'connection_type' not in st.session_state:
+    st.session_state.connection_type = "UDP"
+if 'server_configured' not in st.session_state:
+    st.session_state.server_configured = False
+
 # Load report templates
 report_templates = load_report_templates()
 
@@ -43,11 +56,103 @@ def main():
     #FOR TESTING PURPOSES ONLY
     # Define TAK server IP and port
     # In production, these should be set via environment variables or configuration files
-    ip="192.168.1.241"
-    port=4242
+    #ip="192.168.1.194"
+    #ip="192.168.1.161"
+    #ip="239.2.3.1."
+    #port=6969
     
     # Simple header
-    st.title("RepGen - Voice-Enabled Military Reporting for TAK")
+    st.title("VoxField - Voice-Enabled Military Reporting for TAK")
+    
+    # Server Configuration Section
+    with st.expander("⚙️ TAK Server Configuration", expanded=not st.session_state.server_configured):
+        st.markdown("### Connection Settings")
+        
+        col_config1, col_config2, col_config3 = st.columns([2, 1, 1])
+        
+        with col_config1:
+            # IP Address input
+            ip_input = st.text_input(
+                "Server IP Address",
+                value=st.session_state.server_ip,
+                help="Enter the TAK server IP address or multicast address (e.g., 239.2.3.1)",
+                placeholder="192.168.1.100 or 239.2.3.1"
+            )
+        
+        with col_config2:
+            # Port input
+            port_input = st.text_input(
+                "Port",
+                value=str(st.session_state.server_port),
+                help="Enter the TAK server port (typically 6969 for multicast, 8087 for TCP)",
+                placeholder="6969"
+            )
+        
+        with col_config3:
+            # Connection type selection
+            conn_type = st.selectbox(
+                "Protocol",
+                options=["UDP", "TCP"],
+                index=0 if st.session_state.connection_type == "UDP" else 1,
+                help="Select the connection protocol"
+            )
+        
+        # Add preset configurations for common setups
+        st.markdown("#### Quick Presets")
+        preset_col1, preset_col2, preset_col3 = st.columns(3)
+        
+        with preset_col1:
+            if st.button("📡 Multicast (Default)", use_container_width=True):
+                st.session_state.server_ip = "239.2.3.1"
+                st.session_state.server_port = 6969
+                st.session_state.connection_type = "UDP"
+                st.rerun()
+        
+        with preset_col2:
+            if st.button("🖥️ TAK Server (TCP)", use_container_width=True):
+                st.session_state.server_ip = "192.168.1.100"
+                st.session_state.server_port = 8087
+                st.session_state.connection_type = "TCP"
+                st.rerun()
+        
+        with preset_col3:
+            if st.button("🌐 FreeTAKServer", use_container_width=True):
+                st.session_state.server_ip = "192.168.1.100"
+                st.session_state.server_port = 8087
+                st.session_state.connection_type = "TCP"
+                st.rerun()
+        
+        # Validation and save button
+        col_save1, col_save2 = st.columns([3, 1])
+        
+        with col_save2:
+            if st.button("💾 Save Configuration", type="primary", use_container_width=True):
+                # Validate inputs
+                if not validate_ip_address(ip_input):
+                    st.error("Invalid IP address format. Please enter a valid IPv4 address.")
+                elif not validate_port(port_input):
+                    st.error("Invalid port number. Please enter a port between 1 and 65535.")
+                else:
+                    # Save configuration
+                    st.session_state.server_ip = ip_input
+                    st.session_state.server_port = int(port_input)
+                    st.session_state.connection_type = conn_type
+                    st.session_state.server_configured = True
+                    st.success(f"✅ Configuration saved! Connecting to {conn_type}://{ip_input}:{port_input}")
+                    time.sleep(1)
+                    st.rerun()
+        
+        # Display current configuration status
+        if st.session_state.server_configured:
+            st.info(f"**Current Configuration:** {st.session_state.connection_type}://{st.session_state.server_ip}:{st.session_state.server_port}")
+    
+    # Add a divider between configuration and main interface
+    st.markdown("---")
+    
+    # Main interface - only show if server is configured
+    if not st.session_state.server_configured:
+        st.warning("⚠️ Please configure the TAK server connection above before proceeding.")
+        return
     
     # Create a two-column layout for the main interface
     col1, col2 = st.columns([1, 1])
@@ -211,21 +316,27 @@ def main():
                         time.sleep(1.5)
                         
                         # Format the report for display and generate TAK CoT XML
-                        formatted_report = format_report_for_display(report_type, st.session_state.report_data)
-                
-                        # Send via PyTAK or direct socket
-                        tak_url = f"tcp://{ip}:{port}"  # or use "udp://{ip}:{port}" for UDP
+                        formatted_report, xml_file_path = format_report_for_display(report_type, st.session_state.report_data)
+                        #formatted_report = format_report_for_display(report_type, st.session_state.report_data)
                         
-                        # Try PyTAK first, fall back to direct socket
-                        try:
-                            success = send_cot_direct(tak_url, report_type, st.session_state.report_data)
-                            #success = send_cot_pytak(tak_url, report_type, st.session_state.report_data)
-                        except Exception as e:
-                            logger.warning(f"PyTAK failed, using direct send: {str(e)}")
-                            success = send_cot_direct(tak_url, report_type, st.session_state.report_data)
+                        #if send_result:
+                        #    # Show success message about the report and generated files
+                        #    success_msg = f"Report sent successfully via {st.session_state.connection_type}!"
+                        #    if xml_file_path:
+                        #        success_msg += " TAK CoT XML generated for WinTAK import."
+                        #    st.success(success_msg)
+                        #    report_status = "Sent"
+                        #else:
+                        #    st.error(f"Failed to send report to TAK server at {st.session_state.server_ip}:{st.session_state.server_port}. Please check your connection and configuration.")
+                        #    report_status = "Failed"
                         
-                        if success:
-                            st.success("Report sent successfully to TAK!")
+                        # Send CoT to TAK
+                        if send_cot_pytak_sync(st.session_state.server_ip, st.session_state.server_port, xml_file_path, st.session_state.connection_type):
+                            # Show success message about the report and generated files
+                            success_msg = "Report sent successfully!"
+                            if xml_file_path:
+                                success_msg += " TAK CoT XML generated for WinTAK import."
+                            st.success(success_msg)
                             report_status = "Sent"
                         else:
                             st.error("Failed to send report to TAK.")

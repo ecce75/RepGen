@@ -1,9 +1,12 @@
+from asyncio.log import logger
 import json
 import os
 from datetime import datetime
 import socket
 import streamlit as st
 import re
+from app.utils.pytak_client import VoxFieldPyTAKClient
+import asyncio
 
 # Import the TAK CoT XML generation module
 from app.utils.pytak_cot import create_cot_event
@@ -252,6 +255,40 @@ def send_cot_udp(ip, port, xml_file_path):
         return False
 
     return True  # Simulate successful transmission
+
+# Replace send_cot_tcp and send_cot_udp with:
+async def send_cot_pytak(ip, port, xml_file_path, connection_type="UDP"):
+    """Send CoT XML using PyTAK"""
+    if not xml_file_path or not os.path.exists(xml_file_path):
+        return False
+    
+    try:
+        # Read XML data
+        xml_data = xml_to_string(xml_file_path)
+        
+        # Create and setup client
+        client = VoxFieldPyTAKClient(ip, port, connection_type)
+        await client.setup()
+        
+        # Send CoT
+        await client.send_cot(xml_data)
+        
+        return True
+    except Exception as e:
+        logger.error(f"Failed to send CoT via PyTAK: {e}")
+        return False
+
+# Wrapper for Streamlit (since it doesn't handle async directly)
+def send_cot_pytak_sync(ip, port, xml_file_path, connection_type="UDP"):
+    """Synchronous wrapper for PyTAK sending"""
+    loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(loop)
+    try:
+        return loop.run_until_complete(
+            send_cot_pytak(ip, port, xml_file_path, connection_type)
+        )
+    finally:
+        loop.close()
 
 # Generate pretty XML string    
 def xml_to_string(xml_path):
