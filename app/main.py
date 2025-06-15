@@ -14,6 +14,7 @@ from app.utils.audio import get_audio_from_microphone
 from app.utils.validators import validate_ip_address, validate_port
 from app.utils.pytak_client import VoxFieldPyTAKClient
 from app.utils.pytak_sender import send_cot_pytak, send_cot_direct
+from app.utils.location import get_location_with_fallback
 
 # Set page configuration
 st.set_page_config(
@@ -48,6 +49,10 @@ if 'connection_type' not in st.session_state:
     st.session_state.connection_type = "UDP"
 if 'server_configured' not in st.session_state:
     st.session_state.server_configured = False
+
+# Add to session state initialization
+if 'whisper_model' not in st.session_state:
+    st.session_state.whisper_model = "default"  # or "estonian" for the Estonian model
 
 # Load report templates
 report_templates = load_report_templates()
@@ -141,6 +146,14 @@ def main():
                     st.success(f"✅ Configuration saved! Connecting to {conn_type}://{ip_input}:{port_input}")
                     time.sleep(1)
                     st.rerun()
+        with col_save1:
+            st.markdown("⚙️ Speech Recognition Settings")
+            
+            model_option = st.selectbox("Whisper Model",
+                options=["Standard", "Estonian-Optimized"],
+                help="Estonian-Optimized model provides better accuracy for Estonian language"
+            )
+            st.session_state.use_estonian_model = (model_option == "Estonian-Optimized")
         
         # Display current configuration status
         if st.session_state.server_configured:
@@ -189,7 +202,7 @@ def main():
                 if st.button("Process Recording", key="process_recording", use_container_width=True):
                     with st.spinner("Transcribing audio..."):
                         # Process speech to text
-                        transcript = process_speech_to_text(st.session_state.audio_data)
+                        transcript = process_speech_to_text(st.session_state.audio_data, use_estonian_model=st.session_state.get('use_estonian_model', False))
                         st.session_state.transcript = transcript
                         
                         # Notify user that transcription is complete
@@ -270,6 +283,18 @@ def main():
                     )
                 report_type = new_report_type
             
+            # GET LOCATION OF SENDER
+            with st.spinner("Getting sender location..."):
+                sender_location = get_location_with_fallback()
+                # Store in session state
+                st.session_state.sender_location = sender_location
+                # Display sender location info
+                if sender_location['lat'] != 0 or sender_location['lon'] != 0:
+                    accuracy_text = "High accuracy" if sender_location['ce'] < 100 else "Approximate"
+                    st.success(f"📍 Sender location acquired: {sender_location['lat']:.6f}, {sender_location['lon']:.6f} ({accuracy_text})")
+                else:
+                    st.warning("📍 Could not get automatic location. Using default coordinates.")
+            
             # Create an editable form for the report data
             with st.form("report_form"):
                 # Display each field for editing
@@ -313,10 +338,10 @@ def main():
                 else:
                     # Send the report (simulated)
                     with st.spinner("Sending report..."):
-                        time.sleep(1.5)
+                        time.sleep(0.5)
                         
                         # Format the report for display and generate TAK CoT XML
-                        formatted_report, xml_file_path = format_report_for_display(report_type, st.session_state.report_data)
+                        formatted_report = format_report_for_display(report_type, st.session_state.report_data)
                         #formatted_report = format_report_for_display(report_type, st.session_state.report_data)
                         
                         #if send_result:
@@ -330,16 +355,24 @@ def main():
                         #    st.error(f"Failed to send report to TAK server at {st.session_state.server_ip}:{st.session_state.server_port}. Please check your connection and configuration.")
                         #    report_status = "Failed"
                         
-                        # Send CoT to TAK
-                        if send_cot_pytak_sync(st.session_state.server_ip, st.session_state.server_port, xml_file_path, st.session_state.connection_type):
-                            # Show success message about the report and generated files
-                            success_msg = "Report sent successfully!"
-                            if xml_file_path:
-                                success_msg += " TAK CoT XML generated for WinTAK import."
-                            st.success(success_msg)
+                        # Send CoT to TAK using the actual report data
+                        print(f"Sending report to: {st.session_state.server_ip}:{st.session_state.server_port} via {st.session_state.connection_type}")
+                        if send_cot_pytak_sync(
+                            st.session_state.server_ip, 
+                            st.session_state.server_port, 
+                            report_type,  # Pass report type
+                            st.session_state.report_data,  # Pass actual data
+                            st.session_state.connection_type
+                        ):
+                            # Show success message
+                            st.success(f"Report sent successfully via {st.session_state.connection_type}!")
                             report_status = "Sent"
+
+                            # Show the formatted report
+                            with st.expander("Sent Report Details"):
+                                st.text(formatted_report)
                         else:
-                            st.error("Failed to send report to TAK.")
+                            st.error(f"Failed to send report to TAK server at {st.session_state.server_ip}:{st.session_state.server_port}")
                             report_status = "Failed"
                         
                         # Save to history

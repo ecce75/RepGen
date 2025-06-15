@@ -10,6 +10,7 @@ import asyncio
 
 # Import the TAK CoT XML generation module
 from app.utils.pytak_cot import create_cot_event
+from app.utils.pytak_sender import send_cot_pytak, send_cot_direct
 from typing import Tuple, Optional
 
 
@@ -256,39 +257,33 @@ def send_cot_udp(ip, port, xml_file_path):
 
     return True  # Simulate successful transmission
 
-# Replace send_cot_tcp and send_cot_udp with:
-async def send_cot_pytak(ip, port, xml_file_path, connection_type="UDP"):
-    """Send CoT XML using PyTAK"""
-    if not xml_file_path or not os.path.exists(xml_file_path):
-        return False
-    
-    try:
-        # Read XML data
-        xml_data = xml_to_string(xml_file_path)
-        
-        # Create and setup client
-        client = VoxFieldPyTAKClient(ip, port, connection_type)
-        await client.setup()
-        
-        # Send CoT
-        await client.send_cot(xml_data)
-        
-        return True
-    except Exception as e:
-        logger.error(f"Failed to send CoT via PyTAK: {e}")
-        return False
-
 # Wrapper for Streamlit (since it doesn't handle async directly)
-def send_cot_pytak_sync(ip, port, xml_file_path, connection_type="UDP"):
-    """Synchronous wrapper for PyTAK sending"""
-    loop = asyncio.new_event_loop()
-    asyncio.set_event_loop(loop)
-    try:
-        return loop.run_until_complete(
-            send_cot_pytak(ip, port, xml_file_path, connection_type)
-        )
-    finally:
-        loop.close()
+def send_cot_pytak_sync(ip: str, port: int, report_type: str, report_data: dict, connection_type: str = "UDP") -> bool:
+    """
+    Send CoT using PyTAK with the actual report data.
+    
+    Args:
+        ip: Server IP address
+        port: Server port
+        report_type: Type of report (MEDEVAC, SITREP, etc.)
+        report_data: The actual report field data
+        connection_type: UDP or TCP
+        
+    Returns:
+        bool: Success status
+    """
+    # Build the TAK URL
+    tak_url = f"{connection_type.lower()}://{ip}:{port}"
+    
+    # Use PyTAK if available, otherwise use direct sending
+    #try:
+    #    # Try PyTAK first
+    #    return send_cot_pytak(tak_url, report_type, report_data)
+    #except Exception as e:
+    #    logger.warning(f"PyTAK failed, trying direct send: {e}")
+    #    # Fall back to direct socket sending
+    #    return send_cot_direct(tak_url, report_type, report_data)
+    return send_cot_direct(tak_url, report_type, report_data)
 
 # Generate pretty XML string    
 def xml_to_string(xml_path):

@@ -1,9 +1,11 @@
 import asyncio
 import pytak
+import socket
+import urllib.parse
 from typing import Optional
 import logging
 from configparser import ConfigParser
-from .pytak_cot import create_cot_event
+from app.utils.pytak_cot import create_cot_event
 
 logger = logging.getLogger(__name__)
 
@@ -48,20 +50,27 @@ def send_cot_pytak(tak_url: str, report_type: str, report_data: dict) -> bool:
     Returns:
         bool: Success status
     """
+    logger.info(f"send_cot_pytak called with URL: {tak_url}")
+    
     async def _send():
+        clitool = None
         try:
+            # Add +wo for UDP to prevent binding issues
+            modified_url = tak_url
+            if tak_url.startswith("udp://"):
+                modified_url = tak_url.replace("udp://", "udp+wo://")
+            
             # Create configuration
             config = ConfigParser()
             config["repgen"] = {
-                "COT_URL": tak_url
+                "COT_URL": modified_url  # Use the modified URL
             }
             config = config["repgen"]
             
-            # Create CLITool instance for connection management
+            # Rest of the function remains the same...
             clitool = pytak.CLITool(config)
             await clitool.setup()
             
-            # Create our serializer with the report data
             serializer = RepGenSerializer(
                 clitool.tx_queue, 
                 config, 
@@ -69,32 +78,24 @@ def send_cot_pytak(tak_url: str, report_type: str, report_data: dict) -> bool:
                 report_data
             )
             
-            # Add the serializer to the task list
             clitool.add_tasks({serializer})
             
-            # Run until the serializer completes
-            # We need a timeout to prevent hanging
-            try:
-                await asyncio.wait_for(
-                    serializer.run(), 
-                    timeout=10.0
-                )
-                logger.info(f"Successfully queued {report_type} for transmission")
-                
-                # Give CLITool a moment to actually send
-                await asyncio.sleep(1)
-                
-                return True
-                
-            except asyncio.TimeoutError:
-                logger.error("Timeout sending CoT")
-                return False
-                
+            await asyncio.wait_for(serializer.run(), timeout=5.0)
+            await asyncio.sleep(0.5)
+            
+            return True
+            
         except Exception as e:
             logger.error(f"PyTAK send error: {str(e)}")
             return False
+        finally:
+            if clitool:
+                try:
+                    await clitool.cleanup()
+                except:
+                    pass
     
-    # Run the async function in a new event loop
+    # Run in new event loop
     loop = asyncio.new_event_loop()
     asyncio.set_event_loop(loop)
     try:
@@ -108,8 +109,7 @@ def send_cot_direct(tak_url: str, report_type: str, report_data: dict) -> bool:
     Direct CoT transmission without PyTAK's queue system.
     Useful for one-shot transmissions in Streamlit.
     """
-    import socket
-    import urllib.parse
+    logger.info(f"send_cot_direct called with URL: {tak_url}")
     
     try:
         # Parse the URL

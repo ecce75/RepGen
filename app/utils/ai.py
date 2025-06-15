@@ -9,13 +9,14 @@ from . import reports
 # Configure logging
 logger = logging.getLogger(__name__)
 
-def process_speech_to_text(audio_data, language=None):
+def process_speech_to_text(audio_data, language=None, use_estonian_model=False):
     """
     Process speech to text using the Whisper model.
 
     Parameters:
     audio_data - Audio data bytes
     language - Language code (optional)
+    use_estonian_model - Whether to use Estonian-optimized model
 
     Returns:
     transcript - Text transcript of the audio
@@ -25,7 +26,11 @@ def process_speech_to_text(audio_data, language=None):
 
     # Use the Whisper integration
     with st.spinner("Processing audio with Whisper AI..."):
-        transcript = whisper_process_speech_to_text(audio_data, language)
+        transcript = whisper_process_speech_to_text(
+            audio_data, 
+            language,
+            use_estonian_model=use_estonian_model
+        )
         return transcript
 
 

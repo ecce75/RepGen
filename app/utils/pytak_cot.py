@@ -5,6 +5,11 @@ import pytak
 import xml.etree.ElementTree as ET
 import logging
 import re
+import mgrs
+import uuid
+
+from app.utils.location import get_location_with_fallback
+from app.utils.military_nlp import process_grid_sequence, preprocess_military_transcript
 
 logger = logging.getLogger(__name__)
 
@@ -62,26 +67,85 @@ def determine_cot_type(report_type: str, report_data: dict) -> str:
     
     return type_config["default"]
 
+def mgrs_to_decimal_degrees(mgrs_string: str) -> Dict[str, float]:
+    """Convert MGRS coordinates to decimal degrees."""
+    try:
+        m = mgrs.MGRS()
+        
+        # Use the preprocessing from military_nlp
+        processed = preprocess_military_transcript(mgrs_string)
+        
+        # Extract MGRS pattern
+        mgrs_patterns = [
+            r'(?:grid\s+)?([0-9]{1,2}[A-Z]{1,3}[A-Z]{2}[0-9]+)',
+            r'(?:grid\s+)?([0-9]{1,2}\s*[A-Z]{1,3}\s*[A-Z]{2}\s*[0-9\s]+)',
+        ]
+        
+        mgrs_clean = None
+        for pattern in mgrs_patterns:
+            match = re.search(pattern, processed, re.IGNORECASE)
+            if match:
+                mgrs_clean = match.group(1)
+                break
+        
+        if not mgrs_clean:
+            # Try the comma-separated format handler from military_nlp
+            if ',' in mgrs_string or re.search(r'[A-Za-z]{2,}', mgrs_string):
+                mgrs_clean = process_grid_sequence(mgrs_string)
+        
+        if mgrs_clean:
+            # Remove all spaces
+            mgrs_clean = mgrs_clean.replace(' ', '')
+            
+            # Convert to lat/lon
+            lat, lon = m.toLatLon(mgrs_clean)
+            
+            return {
+                "lat": lat,
+                "lon": lon,
+                "hae": 0.0,  # MGRS doesn't include altitude
+                "ce": 10.0,  # Good accuracy for MGRS
+                "le": 10.0
+            }
+            
+    except Exception as e:
+        logger.warning(f"MGRS conversion failed for '{mgrs_string}': {e}")
+    
+    # Return zeros if parsing fails
+    return {"lat": 0.0, "lon": 0.0, "hae": 0.0, "ce": 9999999.0, "le": 9999999.0}
+
 def extract_coordinates_from_location(location_text: str) -> Dict[str, float]:
     """Extract coordinates from location text."""
-    # This is a placeholder - integrate with your MGRS conversion
-    # For now, return default coordinates
-    coords = {
-        "lat": 0.0,
-        "lon": 0.0,
-        "hae": 0.0,
-        "ce": 9999999.0,
-        "le": 9999999.0
-    }
+    if not location_text:
+        return {"lat": 0.0, "lon": 0.0, "hae": 0.0, "ce": 9999999.0, "le": 9999999.0}
     
-    # If you have valid MGRS data, convert it here
-    # PyTAK can work with decimal degrees directly
-    if location_text and "grid" in location_text.lower():
-        # Your MGRS conversion logic here
-        coords["ce"] = 10.0  # Better accuracy for valid grid
-        coords["le"] = 10.0
+    # First try MGRS conversion
+    coords = mgrs_to_decimal_degrees(location_text)
     
-    return coords
+    # If MGRS gave us valid coordinates, return them
+    if coords["lat"] != 0.0 or coords["lon"] != 0.0:
+        return coords
+    
+    # Try to parse decimal coordinates (lat,lon format)
+    coord_patterns = [
+        r'([-]?\d+\.?\d*)[,\s]+([-]?\d+\.?\d*)',  # Basic decimal
+        r'lat[:\s]*([-]?\d+\.?\d*).*?lon[:\s]*([-]?\d+\.?\d*)',  # Labeled
+    ]
+    
+    for pattern in coord_patterns:
+        match = re.search(pattern, location_text, re.IGNORECASE)
+        if match:
+            return {
+                "lat": float(match.group(1)),
+                "lon": float(match.group(2)),
+                "hae": 0.0,
+                "ce": 100.0,  # Less accurate than MGRS
+                "le": 100.0
+            }
+    
+    # No valid coordinates found
+    logger.error(f"Could not parse location: {location_text}")
+    return {"lat": 0.0, "lon": 0.0, "hae": 0.0, "ce": 9999999.0, "le": 9999999.0}
 
 def create_cot_event(report_type: str, report_data: dict, reporting_unit: Optional[str] = None) -> bytes:
     """
@@ -89,7 +153,7 @@ def create_cot_event(report_type: str, report_data: dict, reporting_unit: Option
     PyTAK uses ElementTree XML, not Event objects.
     """
     # Generate unique ID
-    uid = f"{report_type}-{datetime.utcnow().strftime('%Y%m%d%H%M%S')}"
+    uid = f"{report_type}-{uuid.uuid4()}"
     
     # Time calculations  
     priority = extract_priority_from_data(report_data)
@@ -104,14 +168,36 @@ def create_cot_event(report_type: str, report_data: dict, reporting_unit: Option
     # Determine CoT type
     cot_type = determine_cot_type(report_type, report_data)
     
-    # Extract location
-    location_field = None
-    for field in ["location", "grid", "pickup_location", "enemy_location"]:
+    # Extract location based on report type
+    location_text = None
+    
+    # Define location field mappings per report type
+    location_field_map = {
+        "MEDEVAC": ["location", "pickup_location", "line1_location", "grid"],
+        "CONTACTREP": ["location", "enemy_location", "location_desc", "grid"],
+        "SITREP": ["location", "current_location", "location_desc"],
+        "SPOTREP": ["location_desc", "location"],
+        "SALUTE": ["location_desc", "location"],
+        "PATROLREP": ["location", "current_position"]
+    }
+    
+    # Find the location field for this report type
+    location_fields = location_field_map.get(report_type, ["location", "location_desc", "grid"])
+    
+    for field in location_fields:
         if field in report_data and report_data[field]:
-            location_field = report_data[field]
+            location_text = report_data[field]
+            logger.info(f"Found location in field '{field}': {location_text}")
             break
     
-    coords = extract_coordinates_from_location(location_field or "")
+    # Extract coordinates from the location text
+    if location_text:
+        coords = extract_coordinates_from_location(location_text)
+        logger.info(f"Extracted coordinates: {coords}")
+    else:
+        # No location in report - use zeros or sender location as fallback
+        logger.warning(f"No location found in {report_type} report data")
+        coords = {"lat": 0.0, "lon": 0.0, "hae": 0.0, "ce": 9999999.0, "le": 9999999.0}
     
     # Extract callsign
     callsign = reporting_unit or report_data.get("reporting_unit", "UNKNOWN")
@@ -199,4 +285,4 @@ def create_cot_event(report_type: str, report_data: dict, reporting_unit: Option
     # Set the detail on the event
     root.append(detail)
     
-    return ET.tostring(root)
+    return ET.tostring(root, encoding='utf-8')

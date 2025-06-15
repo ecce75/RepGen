@@ -18,13 +18,14 @@ processor = None
 model = None
 
 
-def load_model(model_size="small"):
+def load_model(model_size="small", custom_model=None):
     """
     Load the Whisper model and processor.
 
     Args:
         model_size (str): Size of the Whisper model to use ('tiny', 'base', 'small', 'medium', 'large')
-                          Smaller models are faster but less accurate
+                          Ignored if custom_model is provided
+        custom_model (str): Custom model name from HuggingFace (e.g., 'TalTechNLP/whisper-large-v3-et-subs')
 
     Returns:
         tuple: (processor, model) - The loaded Whisper processor and model
@@ -34,13 +35,18 @@ def load_model(model_size="small"):
     # Only load if not already loaded
     if processor is None or model is None:
         try:
-            st.info(f"Loading Whisper {model_size} model. This may take a moment...")
+            # Use custom model if provided, otherwise use default OpenAI models
+            if custom_model:
+                model_name = custom_model
+                st.info(f"Loading custom Whisper model: {model_name}")
+            else:
+                model_name = f"openai/whisper-{model_size}"
+                st.info(f"Loading Whisper {model_size} model. This may take a moment...")
 
-            model_name = f"openai/whisper-{model_size}"
             processor = WhisperProcessor.from_pretrained(model_name)
             model = WhisperForConditionalGeneration.from_pretrained(model_name)
 
-            # Determine the best device to use
+            # Device selection remains the same
             if torch.backends.mps.is_available():
                 device = "mps"
                 st.success("Using Apple Silicon GPU acceleration via Metal Performance Shaders")
@@ -116,14 +122,15 @@ def preprocess_audio_bytes(audio_bytes):
         raise e
 
 
-def transcribe_audio(audio_array, language=None, task="transcribe"):
+def transcribe_audio(audio_array, language=None, task="transcribe", use_custom_model=False):
     """
     Transcribe audio using the Whisper model.
 
     Args:
         audio_array (numpy.ndarray): Preprocessed audio array
-        language (str, optional): Language code for transcription (e.g. 'en', 'fr')
+        language (str, optional): Language code for transcription (e.g. 'en', 'fr', 'et')
         task (str): Either 'transcribe' or 'translate' (to English)
+        use_custom_model (bool): Whether to use the Estonian-optimized model
 
     Returns:
         str: Transcribed text
@@ -133,8 +140,10 @@ def transcribe_audio(audio_array, language=None, task="transcribe"):
     if audio_array is None:
         return "Error: No audio data to transcribe."
 
-    # Load model if not already loaded
-    if processor is None or model is None:
+    # Load appropriate model
+    if use_custom_model:
+        processor, model = load_model(custom_model="TalTechNLP/whisper-large-v3-et-subs")
+    else:
         processor, model = load_model()
 
     try:
@@ -172,7 +181,7 @@ def transcribe_audio(audio_array, language=None, task="transcribe"):
         raise e
 
 
-def whisper_process_speech_to_text(audio_bytes, language=None):
+def whisper_process_speech_to_text(audio_bytes, language=None, use_estonian_model=False):
     """
     Process audio bytes to text using Whisper.
     This is the main function to call from the Streamlit app.
@@ -180,6 +189,7 @@ def whisper_process_speech_to_text(audio_bytes, language=None):
     Args:
         audio_bytes (bytes): Audio data from Streamlit's audio recorder
         language (str, optional): Language code for transcription
+        use_estonian_model (bool): Use the Estonian-optimized model
 
     Returns:
         str: Transcribed text
@@ -193,9 +203,17 @@ def whisper_process_speech_to_text(audio_bytes, language=None):
         # Preprocess the audio
         audio_array = preprocess_audio_bytes(audio_bytes)
 
-        # Transcribe
+        # Transcribe with appropriate model
         if audio_array is not None:
-            transcript = transcribe_audio(audio_array, language)
+            # Force Estonian language if using Estonian model
+            if use_estonian_model:
+                language = "et"
+            
+            transcript = transcribe_audio(
+                audio_array, 
+                language, 
+                use_custom_model=use_estonian_model
+            )
             return transcript
         else:
             return "Failed to process audio."
@@ -215,6 +233,7 @@ def get_available_languages():
     """
     return [
         {"code": "en", "name": "English"},
+        {"code": "et", "name": "Estonian"},
         {"code": "zh", "name": "Chinese"},
         {"code": "de", "name": "German"},
         {"code": "es", "name": "Spanish"},
