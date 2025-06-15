@@ -142,7 +142,7 @@ def transcribe_audio(audio_array, language=None, task="transcribe", use_custom_m
 
     # Load appropriate model
     if use_custom_model:
-        processor, model = load_model(custom_model="TalTechNLP/whisper-large-v3-et-subs")
+        processor, model = load_model(custom_model="TalTechNLP/whisper-large-v3-turbo-et-subs")
     else:
         processor, model = load_model()
 
