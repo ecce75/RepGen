@@ -16,12 +16,12 @@ logger = logging.getLogger(__name__)
 # Report type to CoT type mappings using PyTAK constants
 COT_TYPE_MAPPINGS = {
     "MEDEVAC": {
-        "default": "a-f-G-U-C-I-M-E",  # friendly medical evacuation
+        "default": "b-r-f-h-c",  # friendly medical evacuation
         "priority_based": {
-            "flash": "a-f-G-E-V-A-M",     # emergency medevac
-            "immediate": "a-f-G-U-C-I-M-E",
-            "priority": "a-f-G-U-C-I-M",
-            "routine": "a-f-G-U-C-I"
+            "flash": "b-r-f-h-c",   #"a-f-G-E-V-A-M",     # emergency medevac
+            "immediate": "b-r-f-h-c",     #"a-f-G-U-C-I-M-E",
+            "priority": "b-r-f-h-c",   #"a-f-G-U-C-I-M",
+            "routine": "b-r-f-h-c"     #"a-f-G-U-C-I"
         }
     },
     "CONTACTREP": {
