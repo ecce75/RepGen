@@ -25,6 +25,12 @@ st.set_page_config(
 )
 
 # Initialize session state variables if they don't exist
+if 'translated_transcript' not in st.session_state:
+    st.session_state.translated_transcript = None
+if 'audio_language' not in st.session_state:
+    st.session_state.audio_language = "et"  # Default to Estonian
+if 'translate_to_english' not in st.session_state:
+    st.session_state.translate_to_english = True  # Default to translating
 if 'audio_data' not in st.session_state:
     st.session_state.audio_data = None
 if 'transcript' not in st.session_state:
@@ -171,8 +177,32 @@ def main():
     col1, col2 = st.columns([1, 1])
     
     with col1:
+
+        st.markdown("### Language Settings")
+        lang_col1, lang_col2 = st.columns(2)
+        with lang_col1:
+            st.session_state.audio_language = st.selectbox(
+                "Speaking Language",
+                options=["et", "en"],
+                format_func=lambda x: {"et": "Estonian 🇪🇪", "en": "English 🇬🇧"}[x],
+                index=0 if st.session_state.audio_language == "et" else 1,
+                help="Select the language you'll be speaking"
+            )
+        
+        with lang_col2:
+            # Only show translation option if Estonian is selected
+            if st.session_state.audio_language == "et":
+                st.session_state.translate_to_english = st.checkbox(
+                    "Translate to English",
+                    value=st.session_state.translate_to_english,
+                    help="Automatically translate Estonian to English for report processing"
+                )
+            else:
+                st.info("Speaking in English")
         # 1. Large Push-to-Talk Button
         st.markdown("### Record Your Report")
+
+    
         
         # Create a visually prominent recording button
         audio_container = st.container()
@@ -201,59 +231,106 @@ def main():
                 # Process button with spinner for feedback
                 if st.button("Process Recording", key="process_recording", use_container_width=True):
                     with st.spinner("Transcribing audio..."):
-                        # Process speech to text
-                        transcript = process_speech_to_text(st.session_state.audio_data, use_estonian_model=st.session_state.get('use_estonian_model', False))
+                        # Process speech to text with translation
+                        transcript, translated = process_speech_to_text(
+                            st.session_state.audio_data,
+                            language=st.session_state.audio_language,
+                            translate_to_english=(st.session_state.translate_to_english and st.session_state.audio_language == "et")
+                        )
                         st.session_state.transcript = transcript
+                        st.session_state.translated_transcript = translated
                         
-                        # Notify user that transcription is complete
-                        st.success("Transcription complete! See below for results.")
+                        # Show language processing info
+                        if translated:
+                            st.success("✅ Transcribed from Estonian and translated to English!")
+                        else:
+                            st.success("✅ Transcription complete!")
                     
                     with st.spinner("Analyzing report type..."):
-                        # Basic report type detection (simplified without Qwen)
-                        report_type, confidence = determine_report_type_from_transcript(transcript)
+                        # Use translated transcript for analysis if available
+                        analysis_transcript = translated if translated else transcript
+                        report_type, confidence = determine_report_type_from_transcript(
+                            transcript, 
+                            translated
+                        )
                         st.session_state.detected_report_type = report_type
                         st.session_state.detection_confidence = confidence
                     
                     with st.spinner("Preparing report template..."):
-                        # Just get empty fields (Qwen disabled)
+                        # Extract entities using the English transcript for better accuracy
+                        working_transcript = translated if translated else transcript
                         st.session_state.report_data = extract_entities_from_text(
                             report_type,
-                            transcript
+                            working_transcript,
+                            transcript  # Pass original as fallback
                         )
-        
-        # Display the transcript if available with more prominence
-        if st.session_state.transcript:
-            st.markdown("### Transcript")
-            # Use a container with a border to make transcript stand out
-            transcript_container = st.container()
-            with transcript_container:
-                st.markdown("""
-                <style>
-                .transcript-box {
-                    background-color: #f0f2f6;
-                    border-radius: 10px;
-                    padding: 20px;
-                    margin-top: 10px;
-                    margin-bottom: 20px;
-                    border-left: 5px solid #4CAF50;
-                }
-                </style>
-                """, unsafe_allow_html=True)
+            
+            # Update the transcript display section:
+            if st.session_state.transcript:
+                st.markdown("### Transcript")
                 
-                st.markdown(f"<div class='transcript-box'>{st.session_state.transcript}</div>", unsafe_allow_html=True)
-                
-                # Add a button to copy transcript to clipboard (using JS)
-                st.markdown("""
-                <script>
-                function copyTranscript() {
-                    const transcript = document.querySelector('.transcript-box').innerText;
-                    navigator.clipboard.writeText(transcript)
-                        .then(() => alert('Transcript copied to clipboard!'))
-                        .catch(err => console.error('Could not copy text: ', err));
-                }
-                </script>
-                <button onclick="copyTranscript()">Copy Transcript</button>
-                """, unsafe_allow_html=True)
+                # Show both transcripts if translation occurred
+                if st.session_state.translated_transcript:
+                    # Create tabs for original and translated
+                    tab1, tab2 = st.tabs(["Original (Estonian)", "Translated (English)"])
+                    
+                    with tab1:
+                        transcript_container = st.container()
+                        with transcript_container:
+                            st.markdown("""
+                            <style>
+                            .transcript-box {
+                                background-color: #f0f2f6;
+                                border-radius: 10px;
+                                padding: 20px;
+                                margin-top: 10px;
+                                margin-bottom: 20px;
+                                border-left: 5px solid #4CAF50;
+                            }
+                            </style>
+                            """, unsafe_allow_html=True)
+                            
+                            st.markdown(f"<div class='transcript-box'>{st.session_state.transcript}</div>", 
+                                    unsafe_allow_html=True)
+                    
+                    with tab2:
+                        transcript_container = st.container()
+                        with transcript_container:
+                            st.markdown("""
+                            <style>
+                            .translation-box {
+                                background-color: #e8f4fd;
+                                border-radius: 10px;
+                                padding: 20px;
+                                margin-top: 10px;
+                                margin-bottom: 20px;
+                                border-left: 5px solid #2196F3;
+                            }
+                            </style>
+                            """, unsafe_allow_html=True)
+                            
+                            st.markdown(f"<div class='translation-box'>{st.session_state.translated_transcript}</div>", 
+                                    unsafe_allow_html=True)
+                else:
+                    # Show single transcript
+                    transcript_container = st.container()
+                    with transcript_container:
+                        st.markdown("""
+                        <style>
+                        .transcript-box {
+                            background-color: #f0f2f6;
+                            border-radius: 10px;
+                            padding: 20px;
+                            margin-top: 10px;
+                            margin-bottom: 20px;
+                            border-left: 5px solid #4CAF50;
+                        }
+                        </style>
+                        """, unsafe_allow_html=True)
+                        
+                        st.markdown(f"<div class='transcript-box'>{st.session_state.transcript}</div>", 
+                                unsafe_allow_html=True)
+
     
     with col2:
         # 3. Report Preview Pane
